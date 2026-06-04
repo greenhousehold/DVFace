@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>FACEWARE //</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080a0e;
+    --panel: #0d1117;
+    --border: #1e2d1e;
+    --green: #00ff41;
+    --green-dim: #00aa2a;
+    --green-glow: rgba(0,255,65,0.15);
+    --red: #ff2244;
+    --amber: #ffaa00;
+    --text: #c8ffc8;
+    --muted: #3a5a3a;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-display: 'Bebas Neue', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* scanline overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* — HEADER — */
+  header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    height: 48px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    position: relative;
+    z-index: 10;
+  }
+
+  .logo {
+    font-family: var(--font-display);
+    font-size: 28px;
+    letter-spacing: 4px;
+    color: var(--green);
+    text-shadow: 0 0 20px var(--green), 0 0 40px rgba(0,255,65,0.4);
+  }
+
+  .logo span { color: var(--muted); }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 2px;
+  }
+
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .dot.live {
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  .dot.error { background: var(--red); box-shadow: 0 0 8px var(--red); }
+
+  @keyframes pulse {
+    0%,100% { opacity: 1; } 50% { opacity: 0.4; }
+  }
+
+  /* — CAMERA AREA — */
+  .camera-wrap {
+    flex: 1 1 auto;
+    position: relative;
+    overflow: hidden;
+    background: #000;
+  }
+
+  video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* mirror */
+  }
+
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: scaleX(-1);
+  }
+
+  /* corner brackets */
+  .bracket {
+    position: absolute;
+    width: 28px; height: 28px;
+    border-color: var(--green);
+    border-style: solid;
+    opacity: 0.6;
+    z-index: 5;
+    pointer-events: none;
+  }
+  .bracket.tl { top: 16px; left: 16px; border-width: 2px 0 0 2px; }
+  .bracket.tr { top: 16px; right: 16px; border-width: 2px 2px 0 0; }
+  .bracket.bl { bottom: 16px; left: 16px; border-width: 0 0 2px 2px; }
+  .bracket.br { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; }
+
+  /* face count badge */
+  .face-count {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--green-dim);
+    z-index: 5;
+    pointer-events: none;
+    transition: color 0.2s;
+  }
+  .face-count.active { color: var(--green); text-shadow: 0 0 10px var(--green); }
+
+  /* — LOADING OVERLAY — */
+  #loader {
+    position: absolute;
+    inset: 0;
+    background: rgba(8,10,14,0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    z-index: 20;
+    transition: opacity 0.5s;
+  }
+  #loader.hidden { opacity: 0; pointer-events: none; }
+
+  .loader-ring {
+    width: 56px; height: 56px;
+    border: 2px solid var(--border);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loader-text {
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--green-dim);
+  }
+
+  .loader-bar-wrap {
+    width: 180px;
+    height: 2px;
+    background: var(--border);
+    overflow: hidden;
+  }
+  .loader-bar {
+    height: 100%;
+    background: var(--green);
+    width: 0%;
+    transition: width 0.3s;
+    box-shadow: 0 0 8px var(--green);
+  }
+
+  /* — TOOLBAR — */
+  .toolbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    position: relative;
+    z-index: 10;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 8px 16px;
+    background: transparent;
+    border: 1px solid var(--muted);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+    outline: none;
+  }
+  .btn:hover {
+    border-color: var(--green-dim);
+    color: var(--text);
+  }
+  .btn.active {
+    border-color: var(--green);
+    color: var(--green);
+    background: var(--green-glow);
+    box-shadow: 0 0 12px rgba(0,255,65,0.2), inset 0 0 12px rgba(0,255,65,0.05);
+  }
+
+  .btn-flip {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    padding: 8px 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    outline: none;
+    margin-left: 8px;
+  }
+  .btn-flip:hover { border-color: var(--amber); color: var(--amber); }
+
+  .divider {
+    width: 1px;
+    height: 24px;
+    background: var(--border);
+    margin: 0 4px;
+  }
+
+  #error-msg {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--red);
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-align: center;
+    padding: 20px;
+    z-index: 20;
+    background: rgba(8,10,14,0.96);
+  }
+  #error-msg svg { opacity: 0.5; }
+
+  .slider-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .slider-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--muted);
+  }
+  .slider-val {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--green-dim);
+    min-width: 32px;
+  }
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 90px;
+    height: 2px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    border: none;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">FACE<span>WARE</span> //</div>
+  <div class="status">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">INITIALIZING</span>
+  </div>
+</header>
+
+<div class="camera-wrap">
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="canvas"></canvas>
+
+  <div class="bracket tl"></div>
+  <div class="bracket tr"></div>
+  <div class="bracket bl"></div>
+  <div class="bracket br"></div>
+  <div class="face-count" id="faceCount">NO FACES DETECTED</div>
+
+  <div id="loader">
+    <div class="loader-ring"></div>
+    <div class="loader-text" id="loaderLabel">LOADING MODELS</div>
+    <div class="loader-bar-wrap"><div class="loader-bar" id="loaderBar"></div></div>
+  </div>
+
+  <div id="error-msg">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    <span id="errorText">CAMERA ACCESS DENIED</span>
+  </div>
+</div>
+
+<div class="toolbar">
+  <button class="btn active" id="btn-split" onclick="setMode('split')">◑ PURE</button>
+  <button class="btn" id="btn-clouds" onclick="setMode('clouds')">☁ CLOUDS</button>
+  <button class="btn" id="btn-rays" onclick="setMode('rays')">☀ RAYS</button>
+  <button class="btn" id="btn-drip" onclick="setMode('drip')">💧 DRIP</button>
+  <div class="divider"></div>
+  <div class="slider-wrap">
+    <label class="slider-label" for="opacitySlider">OPACITY</label>
+    <input type="range" id="opacitySlider" min="0" max="100" value="88"
+      oninput="overlayAlpha = this.value / 100; document.getElementById('opacityVal').textContent = this.value + '%'">
+    <span class="slider-val" id="opacityVal">88%</span>
+  </div>
+  <div class="divider"></div>
+  <button class="btn-flip" onclick="flipCamera()">⇄ FLIP</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const loader = document.getElementById('loader');
+const loaderBar = document.getElementById('loaderBar');
+const loaderLabel = document.getElementById('loaderLabel');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const faceCount = document.getElementById('faceCount');
+const errorDiv = document.getElementById('error-msg');
+const errorText = document.getElementById('errorText');
+
+let mode = 'split';
+let facingMode = 'user';
+let animFrame = null;
+let detecting = false;
+let lastDetections = [];
+let overlayAlpha = 0.88;
+
+const MODEL_URL = './weights';
+
+function setStatus(state, label) {
+  statusDot.className = 'dot ' + state;
+  statusText.textContent = label;
+}
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-' + m).classList.add('active');
+}
+
+async function loadModels() {
+  const steps = [
+    { label: 'LOADING DETECTOR', pct: 0 },
+    { label: 'LOADING LANDMARKS', pct: 50 },
+  ];
+
+  loaderLabel.textContent = steps[0].label;
+  loaderBar.style.width = '5%';
+
+  await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+  loaderBar.style.width = '50%';
+  loaderLabel.textContent = steps[1].label;
+
+  // full 68-point model (more accurate alignment than the tiny variant)
+  await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+  loaderBar.style.width = '100%';
+  loaderLabel.textContent = 'READY';
+}
+
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    await new Promise(r => video.onloadedmetadata = r);
+    video.play();
+    setStatus('live', 'LIVE');
+  } catch (e) {
+    showError('CAMERA ACCESS DENIED — ALLOW CAMERA IN BROWSER SETTINGS');
+    throw e;
+  }
+}
+
+function showError(msg) {
+  errorDiv.style.display = 'flex';
+  errorText.textContent = msg;
+  loader.classList.add('hidden');
+  setStatus('error', 'ERROR');
+}
+
+function resizeCanvas() {
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+}
+
+// ── DRAWING HELPERS ──────────────────────────────────────────────
+
+const GREEN = '#00ff41';
+const GREEN_DIM = '#00cc33';
+const DARK = 'rgba(0,0,0,0.85)';
+const LENS_COLOR = 'rgba(0,20,0,0.75)';
+
+// dorsal/ventral palette
+const DORSAL = '#f1ece1';  // white (light-facing surfaces)
+const VENTRAL = '#0a0806'; // black (recessed / down-facing surfaces)
+
+// geometry helpers
+const LERP = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+const MID  = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+// closed smooth path through pts (quadratic midpoint method) on context c
+function smoothClosed(c, pts) {
+  const n = pts.length;
+  if (n < 3) {
+    c.beginPath();
+    pts.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y));
+    c.closePath();
+    return;
+  }
+  const s = MID(pts[n - 1], pts[0]);
+  c.beginPath();
+  c.moveTo(s.x, s.y);
+  for (let i = 0; i < n; i++) {
+    const cur = pts[i], nxt = pts[(i + 1) % n], m = MID(cur, nxt);
+    c.quadraticCurveTo(cur.x, cur.y, m.x, m.y);
+  }
+  c.closePath();
+}
+
+// offscreen buffers: `split` holds the composited result that gets blitted with
+// overlayAlpha; `v`/`d` hold the ventral / dorsal region alpha masks used to clip
+// effects (clouds, rays, drips) to their zone
+const splitCanvas = document.createElement('canvas');
+const splitCtx = splitCanvas.getContext('2d');
+const vCanvas = document.createElement('canvas');
+const vCtx = vCanvas.getContext('2d');
+const dCanvas = document.createElement('canvas');
+const dCtx = dCanvas.getContext('2d');
+const fxCanvas = document.createElement('canvas');
+const fxCtx = fxCanvas.getContext('2d');
+
+function sizeBuffers() {
+  for (const cv of [splitCanvas, vCanvas, dCanvas, fxCanvas]) {
+    cv.width = canvas.width; cv.height = canvas.height;
+  }
+}
+
+// blit a buffer onto the visible canvas through the opacity slider
+function blit(src, comp = 'source-over', alphaMul = 1) {
+  ctx.save();
+  ctx.globalAlpha = overlayAlpha * alphaMul;
+  ctx.globalCompositeOperation = comp;
+  ctx.drawImage(src, 0, 0);
+  ctx.restore();
+}
+
+// Compute all dorsal/ventral zone geometry for one face and return paintable
+// layers + region-alpha painters. Effects reuse this so every mode shares the
+// exact same zone delineation.
+function faceGeom(det, lm) {
+  const p = lm.positions;
+  const W = canvas.width, H = canvas.height;
+
+  // ── anchors ──
+  const jaw  = Array.from({length:17}, (_,i) => p[i]); // 0=right ear → 8=chin → 16=left ear
+  const chin = p[8];
+  const faceW = Math.abs(jaw[16].x - jaw[0].x);
+  const cx = (p[0].x + p[16].x) / 2;
+  const browMidY  = (p[19].y + p[24].y) / 2;
+  const browToChin = chin.y - browMidY;
+  const crownH = browToChin * 0.72;
+  const expandX = (pt, k) => cx + (pt.x - cx) * k;
+
+  const sJaw = jaw.map((pt, i) => ({
+    x: expandX(pt, 1.06),
+    y: pt.y + browToChin * 0.11 * Math.max(0, 1 - Math.abs(i - 8) / 5),
+  }));
+
+  const crown    = { x: cx, y: browMidY - crownH };
+  const headTopR = { x: expandX(p[17], 1.14), y: browMidY - crownH * 0.86 };
+  const headTopL = { x: expandX(p[26], 1.14), y: browMidY - crownH * 0.86 };
+  const templeR  = { x: expandX(p[17], 1.32), y: browMidY - crownH * 0.18 };
+  const templeL  = { x: expandX(p[26], 1.32), y: browMidY - crownH * 0.18 };
+
+  const rEi = p[39], rEo = p[36], lEi = p[42], lEo = p[45];
+  const nGl = { x: (p[21].x + p[22].x) / 2, y: (p[21].y + p[22].y) / 2 };
+  const nTip = p[33], nR = p[31], nL = p[35];
+  const noseW = Math.abs(nL.x - nR.x);
+  const noseH = nTip.y - nGl.y;
+  const mR = p[48], mL = p[54], mTop = p[51], mBot = p[57];
+  const mouthW = Math.abs(mL.x - mR.x);
+  const chinMouth = (t) => LERP(chin, mBot, t); // t=0 chin, t=1 lower lip
+
+  const silPts = [ ...sJaw, templeL, headTopL, crown, headTopR, templeR ];
+  const pathSil = (c) => smoothClosed(c, silPts);
+
+  // back-edge eye hooks — black wraps the OUTER corner but is capped at the eye-top
+  // level so it never spikes ABOVE the eye
+  const eTopR = Math.min(p[37].y, p[38].y);
+  const eTopL = Math.min(p[43].y, p[44].y);
+  const hookR = { x: LERP(rEo, p[17], 0.32).x, y: Math.max(LERP(rEo, p[17], 0.38).y, eTopR + 2) };
+  const hookL = { x: LERP(lEo, p[26], 0.32).x, y: Math.max(LERP(lEo, p[26], 0.38).y, eTopL + 2) };
+
+  // bridge transition: black climbs the lower-half nose bridge sides
+  const bridgeMidR = { x: p[28].x - noseW*0.14, y: (p[28].y + p[29].y) / 2 };
+  const bridgeMidL = { x: p[28].x + noseW*0.14, y: (p[28].y + p[29].y) / 2 };
+
+  // ── ventral mass (cheek lobes; top edge = lower eyelid) ──
+  const rightLobe = [
+    rEi, p[40], p[41], rEo, hookR,
+    LERP(rEo, jaw[2], 0.62), LERP(rEo, jaw[4], 0.78), LERP(mR, jaw[5], 0.38),
+    mR, LERP(mR, nTip, 0.5), nR, bridgeMidR, rEi,
+  ];
+  const leftLobe = [
+    lEi, p[47], p[46], lEo, hookL,
+    LERP(lEo, jaw[14], 0.62), LERP(lEo, jaw[12], 0.78), LERP(mL, jaw[11], 0.38),
+    mL, LERP(mL, nTip, 0.5), nL, bridgeMidL, lEi,
+  ];
+  // central: under-nose + mouth + smooth below-lip band. The lower edge is one
+  // clean curve from each cheek down to the chin cleft — no outward peak. The
+  // mouth corners are owned by the lobes; the central just overlaps into the cheeks.
+  const centralMass = [
+    nR, nTip, nL,
+    LERP(nL, mL, 0.5),
+    LERP(mL, jaw[12], 0.22),                              // blend into left cheek (overlaps lobe)
+    { x: LERP(chin, mL, 0.5).x, y: chinMouth(0.40).y },   // smooth descent
+    { x: chin.x, y: chinMouth(0.26).y },                  // heart bottom
+    { x: LERP(chin, mR, 0.5).x, y: chinMouth(0.40).y },
+    LERP(mR, jaw[4], 0.22),                               // blend into right cheek
+    LERP(nR, mR, 0.5),
+  ];
+
+  // ── dorsal carve-backs ──
+  const centerline = [nGl, p[27], p[28], p[29], p[30], nTip];
+  const widths = [noseW*0.30, noseW*0.27, noseW*0.18, noseW*0.15, noseW*0.28, noseW*0.42];
+  const noseBar = [
+    ...centerline.map((pt,i)=>({x:pt.x-widths[i],y:pt.y})),
+    ...centerline.map((pt,i)=>({x:pt.x+widths[i],y:pt.y})).reverse(),
+  ];
+  const philtrum = [
+    { x: nTip.x - noseW*0.10, y: nTip.y - noseH*0.05 },
+    { x: nTip.x + noseW*0.10, y: nTip.y - noseH*0.05 },
+    { x: mTop.x + mouthW*0.12, y: mTop.y - 2 },
+    { x: mTop.x - mouthW*0.12, y: mTop.y - 2 },
+  ];
+  const inset = faceW * 0.12;
+  const rimRa = [sJaw[1], sJaw[2], sJaw[3], sJaw[4], sJaw[5], sJaw[6]];
+  const rimRpoly = [...rimRa, ...rimRa.map(pt=>({x:pt.x+inset,y:pt.y-inset*0.3})).reverse()];
+  const rimLa = [sJaw[10], sJaw[11], sJaw[12], sJaw[13], sJaw[14], sJaw[15]];
+  const rimLpoly = [...rimLa, ...rimLa.map(pt=>({x:pt.x-inset,y:pt.y-inset*0.3})).reverse()];
+
+  // ── ventral details ──
+  const mouth = [p[48],p[49],p[50],p[51],p[52],p[53],p[54],p[55],p[56],p[57],p[58],p[59]];
+  const cleftT = chinMouth(0.46), cleftB = chinMouth(0.05);
+  const cw = faceW * 0.032;
+  const cleft = [
+    { x: cleftT.x - cw, y: cleftT.y },
+    { x: cleftT.x + cw, y: cleftT.y },
+    { x: cleftB.x, y: cleftB.y },
+  ];
+  const holeR = noseW * 0.13;
+  const fillNostrils = (c) => {
+    c.beginPath(); c.ellipse(LERP(nR,nTip,0.50).x, nTip.y, holeR, holeR*0.78, 0,0,Math.PI*2); c.fill();
+    c.beginPath(); c.ellipse(LERP(nL,nTip,0.50).x, nTip.y, holeR, holeR*0.78, 0,0,Math.PI*2); c.fill();
+  };
+
+  // ── eyes + dome fade (erased to transparent) ──
+  const scaleEye = (idx) => {
+    const ep = idx.map(i=>p[i]);
+    const ec = ep.reduce((a,q)=>({x:a.x+q.x/ep.length, y:a.y+q.y/ep.length}),{x:0,y:0});
+    return ep.map(q=>({x:ec.x+(q.x-ec.x)*1.25, y:ec.y+(q.y-ec.y)*1.35}));
+  };
+  const fillEyes = (c) => { smoothClosed(c, scaleEye([36,37,38,39,40,41])); c.fill();
+                            smoothClosed(c, scaleEye([42,43,44,45,46,47])); c.fill(); };
+  const fadeTopY = crown.y, fadeBotY = browMidY - crownH*0.30;
+  const fillDomeFade = (c) => {
+    const g = c.createLinearGradient(0, fadeTopY, 0, fadeBotY);
+    g.addColorStop(0,'rgba(0,0,0,1)'); g.addColorStop(1,'rgba(0,0,0,0)');
+    c.fillStyle = g; c.fillRect(0, fadeTopY, W, fadeBotY - fadeTopY);
+  };
+
+  const fillPoly = (c, pts) => { smoothClosed(c, pts); c.fill(); };
+  const fillVentralMass    = (c) => { fillPoly(c,rightLobe); fillPoly(c,leftLobe); fillPoly(c,centralMass); };
+  const fillDorsalCarves   = (c) => { fillPoly(c,noseBar); fillPoly(c,philtrum); fillPoly(c,rimRpoly); fillPoly(c,rimLpoly); };
+  const fillVentralDetails = (c) => { fillNostrils(c); fillPoly(c,mouth); fillPoly(c,cleft); };
+
+  // full two-tone mask (clipped to silhouette)
+  const paintTwoTone = (c) => {
+    c.save(); pathSil(c); c.clip();
+    c.fillStyle = DORSAL;  c.fillRect(0,0,W,H);
+    c.fillStyle = VENTRAL; fillVentralMass(c);
+    c.fillStyle = DORSAL;  fillDorsalCarves(c);
+    c.fillStyle = VENTRAL; fillVentralDetails(c);
+    c.globalCompositeOperation = 'destination-out'; c.fillStyle = '#000'; fillEyes(c); fillDomeFade(c);
+    c.globalCompositeOperation = 'source-over';
+    c.restore();
+  };
+
+  // ventral-only alpha (opaque where ventral, else transparent)
+  const paintVentralAlpha = (c) => {
+    c.save(); pathSil(c); c.clip();
+    c.fillStyle = '#fff'; fillVentralMass(c);
+    c.globalCompositeOperation = 'destination-out'; fillDorsalCarves(c);
+    c.globalCompositeOperation = 'source-over'; c.fillStyle = '#fff'; fillVentralDetails(c);
+    c.globalCompositeOperation = 'destination-out'; fillEyes(c);
+    c.globalCompositeOperation = 'source-over';
+    c.restore();
+  };
+
+  // dorsal-only alpha = silhouette − ventral − eyes − dome-fade
+  const paintDorsalAlpha = (c, ventralSrc) => {
+    c.save(); pathSil(c); c.clip();
+    c.fillStyle = '#fff'; c.fillRect(0,0,W,H);
+    c.globalCompositeOperation = 'destination-out';
+    c.drawImage(ventralSrc, 0, 0);
+    c.fillStyle = '#000'; fillEyes(c); fillDomeFade(c);
+    c.globalCompositeOperation = 'source-over';
+    c.restore();
+  };
+
+  // drip origins along the lower face contour (jaw + chin); drips are clipped to
+  // the non-dorsal region so they read as the dark oozing off the lower face
+  const dripAnchors = [sJaw[4], sJaw[5], sJaw[6], sJaw[7], sJaw[8], sJaw[9], sJaw[10], sJaw[11], sJaw[12]];
+
+  return {
+    W, H, cx, faceW, browToChin, crown, chin, bounds: det.detection.box,
+    center: { x: cx, y: (browMidY + chin.y) / 2 },
+    pathSil, paintTwoTone, paintVentralAlpha, paintDorsalAlpha, fillEyes, dripAnchors,
+  };
+}
+
+// ── MODE RENDERERS ────────────────────────────────────────────────
+
+// PURE: the plain dorsal/ventral two-tone
+function renderPure(geom) {
+  sizeBuffers();
+  geom.paintTwoTone(splitCtx);
+  blit(splitCanvas);
+}
+
+// CLOUDS: puffy white marshmallow clouds (with soft shadow for volume) scattered
+// across and ABOVE the head. Kept out of the ventral zone + eyes, but free to
+// spill beyond the dorsal outline over the hair/background.
+function renderClouds(geom, t) {
+  sizeBuffers();
+  geom.paintTwoTone(splitCtx);
+  geom.paintVentralAlpha(vCtx);
+
+  const b = geom.bounds, fw = geom.faceW;
+  const span = fw * 2.8;
+  const top = b.y - geom.browToChin * 1.0;
+  for (let i = 0; i < 9; i++) {
+    const ph = i * 1.37;
+    const lane = i % 3;
+    const x = geom.cx - span/2 + ((t*0.04 + i*0.23 + Math.sin(ph)*0.05) % 1.25 - 0.12) * span;
+    const y = top + lane * (b.height * 0.42) + Math.sin(t*0.3 + ph) * 5;
+    const r = fw * (0.16 + 0.06 * ((i*53) % 7) / 7);
+    cloudCluster(fxCtx, x, y, r);
+  }
+
+  // remove ventral + eyes (but allow clouds beyond the dorsal outline)
+  fxCtx.globalCompositeOperation = 'destination-out';
+  fxCtx.drawImage(vCanvas, 0, 0);
+  fxCtx.fillStyle = '#000'; geom.fillEyes(fxCtx);
+  fxCtx.globalCompositeOperation = 'source-over';
+
+  splitCtx.drawImage(fxCanvas, 0, 0);
+  blit(splitCanvas);
+}
+
+// one puffy cloud: a union of lobes filled white, with a soft drop-shadow that
+// gives it marshmallow volume against the white dorsal
+function cloudCluster(c, x, y, r) {
+  c.save();
+  c.shadowColor = 'rgba(38,40,55,0.22)';
+  c.shadowBlur = r * 0.5;
+  c.shadowOffsetY = r * 0.32;
+  c.fillStyle = '#ffffff';
+  c.beginPath();
+  c.arc(x,          y,          r*0.75, 0, Math.PI*2);
+  c.arc(x - r*0.85, y + r*0.12, r*0.55, 0, Math.PI*2);
+  c.arc(x + r*0.85, y + r*0.12, r*0.60, 0, Math.PI*2);
+  c.arc(x - r*0.40, y - r*0.40, r*0.50, 0, Math.PI*2);
+  c.arc(x + r*0.45, y - r*0.35, r*0.52, 0, Math.PI*2);
+  c.fill();
+  c.restore();
+}
+
+// RAYS: warm light radiating from the face center, free to extend outward beyond
+// the dorsal edges (over hair/background); only the ventral zone + eyes are kept clear
+function renderRays(geom, t) {
+  sizeBuffers();
+  geom.paintTwoTone(splitCtx);
+  geom.paintVentralAlpha(vCtx);
+
+  const C = geom.center, fw = geom.faceW, R = geom.browToChin*3.0 + fw*1.4;
+
+  // warm glow that fades out with distance (so the far background stays clear)
+  const base = fxCtx.createRadialGradient(C.x, C.y, 0, C.x, C.y, R);
+  base.addColorStop(0, 'rgba(255,244,223,0.85)');
+  base.addColorStop(0.6, 'rgba(255,240,210,0.35)');
+  base.addColorStop(1, 'rgba(255,240,210,0)');
+  fxCtx.fillStyle = base; fxCtx.fillRect(0, 0, geom.W, geom.H);
+
+  // rotating sun rays
+  fxCtx.save();
+  fxCtx.translate(C.x, C.y);
+  fxCtx.globalCompositeOperation = 'lighter';
+  const N = 40;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI*2 + t*0.12;
+    const w = 0.020 + 0.015 * Math.sin(t*0.8 + i);
+    fxCtx.fillStyle = `rgba(255,236,190,${0.10 + 0.06 * Math.sin(t*1.3 + i*0.7)})`;
+    fxCtx.beginPath(); fxCtx.moveTo(0, 0); fxCtx.arc(0, 0, R, a - w, a + w); fxCtx.closePath(); fxCtx.fill();
+  }
+  fxCtx.restore();
+
+  // bright core glow
+  const gg = fxCtx.createRadialGradient(C.x, C.y, 0, C.x, C.y, fw*0.9);
+  gg.addColorStop(0, 'rgba(255,250,235,0.6)'); gg.addColorStop(1, 'rgba(255,250,235,0)');
+  fxCtx.globalCompositeOperation = 'lighter';
+  fxCtx.fillStyle = gg; fxCtx.fillRect(0, 0, geom.W, geom.H);
+  fxCtx.globalCompositeOperation = 'source-over';
+
+  // keep rays out of the ventral zone + eyes (dorsal outline NOT enforced)
+  fxCtx.globalCompositeOperation = 'destination-out';
+  fxCtx.drawImage(vCanvas, 0, 0);
+  fxCtx.fillStyle = '#000'; geom.fillEyes(fxCtx);
+  fxCtx.globalCompositeOperation = 'source-over';
+
+  splitCtx.drawImage(fxCanvas, 0, 0);
+  blit(splitCanvas);
+}
+
+// DRIP: black wetness oozing down off the lower face. Clipped to the NON-dorsal
+// region so it never paints over the white zones — it reads as the dark melting
+// down past the jaw/chin over the neck.
+function renderDrip(geom, t) {
+  sizeBuffers();
+  geom.paintTwoTone(splitCtx);
+  geom.paintVentralAlpha(vCtx);
+  geom.paintDorsalAlpha(dCtx, vCanvas);
+
+  // build notDorsal = opaque everywhere EXCEPT the dorsal (white) zone, into vCanvas
+  vCtx.globalCompositeOperation = 'source-over';
+  vCtx.fillStyle = '#000'; vCtx.fillRect(0, 0, geom.W, geom.H);
+  vCtx.globalCompositeOperation = 'destination-out';
+  vCtx.drawImage(dCanvas, 0, 0);
+  vCtx.globalCompositeOperation = 'source-over';
+
+  const fw = geom.faceW;
+  fxCtx.fillStyle = VENTRAL;
+  geom.dripAnchors.forEach((a, i) => {
+    const ph = i * 1.7;
+    const maxLen = fw * (0.30 + 0.20 * ((i*53) % 5) / 5);
+    const len = maxLen * (0.5 + 0.5 * Math.sin(t*0.9 + ph));
+    const w = fw * 0.026;
+    dripColumn(fxCtx, a.x, a.y, len, w);
+
+    // a droplet that detaches and falls, then resets
+    const fall = (t*0.4 + i*0.31) % 1;
+    const fy = a.y + len + fall * fw * 0.7;
+    const fr = w * (1.2 - fall*0.5);
+    fxCtx.globalAlpha = Math.max(0, 1 - fall*0.85);
+    fxCtx.beginPath(); fxCtx.ellipse(a.x, fy, fr*0.8, fr, 0, 0, Math.PI*2); fxCtx.fill();
+    fxCtx.globalAlpha = 1;
+  });
+
+  // keep drips only where it's NOT dorsal white
+  fxCtx.globalCompositeOperation = 'destination-in';
+  fxCtx.drawImage(vCanvas, 0, 0);
+  fxCtx.globalCompositeOperation = 'source-over';
+
+  splitCtx.drawImage(fxCanvas, 0, 0);
+  blit(splitCanvas);
+}
+
+function dripColumn(c, x, y, len, w) {
+  c.beginPath();
+  c.moveTo(x - w/2, y);
+  c.lineTo(x - w*0.42, y + len);
+  c.lineTo(x + w*0.42, y + len);
+  c.lineTo(x + w/2, y);
+  c.closePath(); c.fill();
+  c.beginPath(); c.arc(x, y + len, w*0.7, 0, Math.PI*2); c.fill(); // bulb
+}
+
+// ── DETECTION LOOP ────────────────────────────────────────────────
+
+async function detect() {
+  if (video.readyState < 2) { animFrame = requestAnimationFrame(detect); return; }
+
+  resizeCanvas();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const scaleX = canvas.width / video.videoWidth;
+  const scaleY = canvas.height / video.videoHeight;
+
+  if (!detecting) {
+    detecting = true;
+    faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.45 }))
+      .withFaceLandmarks()
+      .then(dets => {
+        lastDetections = dets;
+        detecting = false;
+      });
+  }
+
+  // draw scaled detections
+  const t = performance.now() / 1000;
+  for (const det of lastDetections) {
+    if (!det.landmarks) continue;
+    const box = det.detection.box;
+    const scaledDet = {
+      detection: {
+        box: { x: box.x * scaleX, y: box.y * scaleY, width: box.width * scaleX, height: box.height * scaleY },
+        score: det.detection.score
+      },
+      landmarks: {
+        positions: det.landmarks.positions.map(p => ({ x: p.x * scaleX, y: p.y * scaleY }))
+      }
+    };
+
+    const geom = faceGeom(scaledDet, scaledDet.landmarks);
+    if      (mode === 'split')  renderPure(geom);
+    else if (mode === 'clouds') renderClouds(geom, t);
+    else if (mode === 'rays')   renderRays(geom, t);
+    else if (mode === 'drip')   renderDrip(geom, t);
+  }
+
+  // face count
+  const n = lastDetections.length;
+  if (n === 0) {
+    faceCount.className = 'face-count';
+    faceCount.textContent = 'NO FACES DETECTED';
+  } else {
+    faceCount.className = 'face-count active';
+    faceCount.textContent = `${n} FACE${n>1?'S':''} LOCKED`;
+  }
+
+  animFrame = requestAnimationFrame(detect);
+}
+
+async function flipCamera() {
+  facingMode = facingMode === 'user' ? 'environment' : 'user';
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+  }
+  await startCamera();
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+
+(async () => {
+  setStatus('', 'INITIALIZING');
+  try {
+    await Promise.all([loadModels(), startCamera()]);
+    setTimeout(() => loader.classList.add('hidden'), 300);
+    detect();
+  } catch(e) {
+    if (!errorDiv.style.display || errorDiv.style.display === 'none') {
+      showError('INITIALIZATION FAILED — SEE CONSOLE');
+    }
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
