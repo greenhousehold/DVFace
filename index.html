@@ -262,6 +262,14 @@
     margin: 0 4px;
   }
 
+  .mode-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    align-self: center;
+  }
+
   #error-msg {
     position: absolute;
     inset: 0;
@@ -362,10 +370,9 @@
 </div>
 
 <div class="toolbar">
-  <button class="btn active" id="btn-split" onclick="setMode('split')">◑ PURE</button>
-  <button class="btn" id="btn-clouds" onclick="setMode('clouds')">☁ CLOUDS</button>
-  <button class="btn" id="btn-rays" onclick="setMode('rays')">☀ RAYS</button>
-  <button class="btn" id="btn-drip" onclick="setMode('drip')">💧 DRIP</button>
+  <span class="mode-label">SPLIT&nbsp;+</span>
+  <button class="btn" id="btn-rays" onclick="toggleFx('rays')">☀ RAYS</button>
+  <button class="btn" id="btn-drip" onclick="toggleFx('drip')">💧 DRIP</button>
   <div class="divider"></div>
   <div class="slider-wrap">
     <label class="slider-label" for="opacitySlider">OPACITY</label>
@@ -391,7 +398,8 @@ const faceCount = document.getElementById('faceCount');
 const errorDiv = document.getElementById('error-msg');
 const errorText = document.getElementById('errorText');
 
-let mode = 'split';
+let fxRays = false;
+let fxDrip = false;
 let facingMode = 'user';
 let animFrame = null;
 let detecting = false;
@@ -405,10 +413,11 @@ function setStatus(state, label) {
   statusText.textContent = label;
 }
 
-function setMode(m) {
-  mode = m;
-  document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('btn-' + m).classList.add('active');
+function toggleFx(name) {
+  if (name === 'rays') fxRays = !fxRays;
+  if (name === 'drip') fxDrip = !fxDrip;
+  document.getElementById('btn-rays').classList.toggle('active', fxRays);
+  document.getElementById('btn-drip').classList.toggle('active', fxDrip);
 }
 
 async function loadModels() {
@@ -570,29 +579,40 @@ function faceGeom(det, lm) {
   const bridgeMidR = { x: p[28].x - noseW*0.14, y: (p[28].y + p[29].y) / 2 };
   const bridgeMidL = { x: p[28].x + noseW*0.14, y: (p[28].y + p[29].y) / 2 };
 
-  // ── ventral mass (cheek lobes; top edge = lower eyelid) ──
+  // ── ventral mass ──
+  // The cheek LOBES cover only the eye + upper cheek (top edge = lower eyelid) and
+  // tuck inward to the nose; they do NOT reach the mouth or lower jaw.
   const rightLobe = [
     rEi, p[40], p[41], rEo, hookR,
-    LERP(rEo, jaw[2], 0.62), LERP(rEo, jaw[4], 0.78), LERP(mR, jaw[5], 0.38),
-    mR, LERP(mR, nTip, 0.5), nR, bridgeMidR, rEi,
+    LERP(rEo, jaw[2], 0.58),
+    LERP(rEo, jaw[4], 0.60),     // lobe bottom-outer (sits ON the central's cheek line)
+    LERP(rEo, mR, 0.62),         // tuck inward toward the nose
+    LERP(mR, nTip, 0.5),
+    nR, bridgeMidR, rEi,
   ];
   const leftLobe = [
     lEi, p[47], p[46], lEo, hookL,
-    LERP(lEo, jaw[14], 0.62), LERP(lEo, jaw[12], 0.78), LERP(mL, jaw[11], 0.38),
-    mL, LERP(mL, nTip, 0.5), nL, bridgeMidL, lEi,
+    LERP(lEo, jaw[14], 0.58),
+    LERP(lEo, jaw[12], 0.60),
+    LERP(lEo, mL, 0.62),
+    LERP(mL, nTip, 0.5),
+    nL, bridgeMidL, lEi,
   ];
-  // central: under-nose + mouth + smooth below-lip band. The lower edge is one
-  // clean curve from each cheek down to the chin cleft — no outward peak. The
-  // mouth corners are owned by the lobes; the central just overlaps into the cheeks.
+  // The CENTRAL mass owns the entire lower face AND the lower-side boundary, as one
+  // smooth monotonic curve per side (cheekbone → cheek → descent → cleft). The lobes
+  // sit inside it, so no lobe/central seam shows on the jaw → no scalloped peak.
   const centralMass = [
-    nR, nTip, nL,
-    LERP(nL, mL, 0.5),
-    LERP(mL, jaw[12], 0.22),                              // blend into left cheek (overlaps lobe)
-    { x: LERP(chin, mL, 0.5).x, y: chinMouth(0.40).y },   // smooth descent
-    { x: chin.x, y: chinMouth(0.26).y },                  // heart bottom
-    { x: LERP(chin, mR, 0.5).x, y: chinMouth(0.40).y },
-    LERP(mR, jaw[4], 0.22),                               // blend into right cheek
-    LERP(nR, mR, 0.5),
+    nR,
+    LERP(nR, rEo, 0.45),                                   // right cheekbone (inner)
+    LERP(rEo, jaw[4], 0.55),                               // right cheek (upper)
+    LERP(rEo, jaw[4], 0.80),                               // right cheek (lower)
+    { x: LERP(chin, mR, 0.55).x, y: chinMouth(0.44).y },   // smooth descent right
+    { x: chin.x, y: chinMouth(0.26).y },                   // cleft / heart bottom
+    { x: LERP(chin, mL, 0.55).x, y: chinMouth(0.44).y },   // smooth descent left
+    LERP(lEo, jaw[12], 0.80),                              // left cheek (lower)
+    LERP(lEo, jaw[12], 0.55),                              // left cheek (upper)
+    LERP(nL, lEo, 0.45),                                   // left cheekbone (inner)
+    nL, nTip,
   ];
 
   // ── dorsal carve-backs ──
@@ -694,88 +714,45 @@ function faceGeom(det, lm) {
   };
 }
 
-// ── MODE RENDERERS ────────────────────────────────────────────────
-
-// PURE: the plain dorsal/ventral two-tone
-function renderPure(geom) {
+// ── SCENE COMPOSITION ─────────────────────────────────────────────
+// The base is always the dorsal/ventral split. RAYS and DRIP are independent
+// layers that can be toggled on together.
+function renderScene(geom, t) {
   sizeBuffers();
-  geom.paintTwoTone(splitCtx);
+  geom.paintTwoTone(splitCtx);     // base two-tone
+  if (fxRays) addRays(geom, t);    // warm light layer
+  if (fxDrip) addDrip(geom, t);    // black drip layer
   blit(splitCanvas);
 }
 
-// CLOUDS: puffy white marshmallow clouds (with soft shadow for volume) scattered
-// across and ABOVE the head. Kept out of the ventral zone + eyes, but free to
-// spill beyond the dorsal outline over the hair/background.
-function renderClouds(geom, t) {
-  sizeBuffers();
-  geom.paintTwoTone(splitCtx);
-  geom.paintVentralAlpha(vCtx);
+const clearBuf = (c, geom) => c.clearRect(0, 0, geom.W, geom.H);
 
-  const b = geom.bounds, fw = geom.faceW;
-  const span = fw * 2.8;
-  const top = b.y - geom.browToChin * 1.0;
-  for (let i = 0; i < 9; i++) {
-    const ph = i * 1.37;
-    const lane = i % 3;
-    const x = geom.cx - span/2 + ((t*0.04 + i*0.23 + Math.sin(ph)*0.05) % 1.25 - 0.12) * span;
-    const y = top + lane * (b.height * 0.42) + Math.sin(t*0.3 + ph) * 5;
-    const r = fw * (0.16 + 0.06 * ((i*53) % 7) / 7);
-    cloudCluster(fxCtx, x, y, r);
-  }
-
-  // remove ventral + eyes (but allow clouds beyond the dorsal outline)
-  fxCtx.globalCompositeOperation = 'destination-out';
-  fxCtx.drawImage(vCanvas, 0, 0);
-  fxCtx.fillStyle = '#000'; geom.fillEyes(fxCtx);
-  fxCtx.globalCompositeOperation = 'source-over';
-
-  splitCtx.drawImage(fxCanvas, 0, 0);
-  blit(splitCanvas);
-}
-
-// one puffy cloud: a union of lobes filled white, with a soft drop-shadow that
-// gives it marshmallow volume against the white dorsal
-function cloudCluster(c, x, y, r) {
-  c.save();
-  c.shadowColor = 'rgba(38,40,55,0.22)';
-  c.shadowBlur = r * 0.5;
-  c.shadowOffsetY = r * 0.32;
-  c.fillStyle = '#ffffff';
-  c.beginPath();
-  c.arc(x,          y,          r*0.75, 0, Math.PI*2);
-  c.arc(x - r*0.85, y + r*0.12, r*0.55, 0, Math.PI*2);
-  c.arc(x + r*0.85, y + r*0.12, r*0.60, 0, Math.PI*2);
-  c.arc(x - r*0.40, y - r*0.40, r*0.50, 0, Math.PI*2);
-  c.arc(x + r*0.45, y - r*0.35, r*0.52, 0, Math.PI*2);
-  c.fill();
-  c.restore();
-}
-
-// RAYS: warm light radiating from the face center, free to extend outward beyond
-// the dorsal edges (over hair/background); only the ventral zone + eyes are kept clear
-function renderRays(geom, t) {
-  sizeBuffers();
-  geom.paintTwoTone(splitCtx);
+// RAYS: warm light radiating from the face center — static (no rotation), with a
+// gentle brightness pulse. Free to extend beyond the dorsal edges; only the ventral
+// zone + eyes are kept clear. Composited onto splitCanvas.
+function addRays(geom, t) {
+  clearBuf(fxCtx, geom); clearBuf(vCtx, geom);
   geom.paintVentralAlpha(vCtx);
 
   const C = geom.center, fw = geom.faceW, R = geom.browToChin*3.0 + fw*1.4;
 
-  // warm glow that fades out with distance (so the far background stays clear)
+  // warm glow that fades out with distance
   const base = fxCtx.createRadialGradient(C.x, C.y, 0, C.x, C.y, R);
   base.addColorStop(0, 'rgba(255,244,223,0.85)');
   base.addColorStop(0.6, 'rgba(255,240,210,0.35)');
   base.addColorStop(1, 'rgba(255,240,210,0)');
   fxCtx.fillStyle = base; fxCtx.fillRect(0, 0, geom.W, geom.H);
 
-  // rotating sun rays
+  // fixed sun rays + gentle global brightness pulse (not spinning)
+  const pulse = 0.13 + 0.04 * Math.sin(t * 1.2);
   fxCtx.save();
   fxCtx.translate(C.x, C.y);
   fxCtx.globalCompositeOperation = 'lighter';
   const N = 40;
   for (let i = 0; i < N; i++) {
-    const a = (i / N) * Math.PI*2 + t*0.12;
-    const w = 0.020 + 0.015 * Math.sin(t*0.8 + i);
-    fxCtx.fillStyle = `rgba(255,236,190,${0.10 + 0.06 * Math.sin(t*1.3 + i*0.7)})`;
+    const a = (i / N) * Math.PI*2;
+    const w = 0.024;
+    fxCtx.fillStyle = `rgba(255,236,190,${pulse})`;
     fxCtx.beginPath(); fxCtx.moveTo(0, 0); fxCtx.arc(0, 0, R, a - w, a + w); fxCtx.closePath(); fxCtx.fill();
   }
   fxCtx.restore();
@@ -787,26 +764,23 @@ function renderRays(geom, t) {
   fxCtx.fillStyle = gg; fxCtx.fillRect(0, 0, geom.W, geom.H);
   fxCtx.globalCompositeOperation = 'source-over';
 
-  // keep rays out of the ventral zone + eyes (dorsal outline NOT enforced)
+  // keep rays out of the ventral zone + eyes
   fxCtx.globalCompositeOperation = 'destination-out';
   fxCtx.drawImage(vCanvas, 0, 0);
   fxCtx.fillStyle = '#000'; geom.fillEyes(fxCtx);
   fxCtx.globalCompositeOperation = 'source-over';
 
   splitCtx.drawImage(fxCanvas, 0, 0);
-  blit(splitCanvas);
 }
 
-// DRIP: black wetness oozing down off the lower face. Clipped to the NON-dorsal
-// region so it never paints over the white zones — it reads as the dark melting
-// down past the jaw/chin over the neck.
-function renderDrip(geom, t) {
-  sizeBuffers();
-  geom.paintTwoTone(splitCtx);
+// DRIP: black wetness oozing down off the lower face, clipped to the NON-dorsal
+// region so it never paints over the white zones. Composited onto splitCanvas.
+function addDrip(geom, t) {
+  clearBuf(fxCtx, geom); clearBuf(vCtx, geom); clearBuf(dCtx, geom);
   geom.paintVentralAlpha(vCtx);
   geom.paintDorsalAlpha(dCtx, vCanvas);
 
-  // build notDorsal = opaque everywhere EXCEPT the dorsal (white) zone, into vCanvas
+  // notDorsal = opaque everywhere EXCEPT the dorsal (white) zone, into vCanvas
   vCtx.globalCompositeOperation = 'source-over';
   vCtx.fillStyle = '#000'; vCtx.fillRect(0, 0, geom.W, geom.H);
   vCtx.globalCompositeOperation = 'destination-out';
@@ -837,7 +811,6 @@ function renderDrip(geom, t) {
   fxCtx.globalCompositeOperation = 'source-over';
 
   splitCtx.drawImage(fxCanvas, 0, 0);
-  blit(splitCanvas);
 }
 
 function dripColumn(c, x, y, len, w) {
@@ -887,10 +860,7 @@ async function detect() {
     };
 
     const geom = faceGeom(scaledDet, scaledDet.landmarks);
-    if      (mode === 'split')  renderPure(geom);
-    else if (mode === 'clouds') renderClouds(geom, t);
-    else if (mode === 'rays')   renderRays(geom, t);
-    else if (mode === 'drip')   renderDrip(geom, t);
+    renderScene(geom, t);
   }
 
   // face count
